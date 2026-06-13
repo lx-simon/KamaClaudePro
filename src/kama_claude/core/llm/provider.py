@@ -138,6 +138,51 @@ def _openai_messages(messages: list[dict[str, object]], system: str) -> list[dic
     return converted
 
 
+def _anthropic_usage_stats(final_message: Any, model: str) -> UsageStats:
+    usage = final_message.usage
+    cache_read: int = getattr(usage, "cache_read_input_tokens", 0) or 0
+    cache_create: int = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+    output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+    return UsageStats(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cache_read_input_tokens=cache_read,
+        cache_creation_input_tokens=cache_create,
+        context_pct=input_tokens / _context_window(model),
+    )
+
+
+def _anthropic_response_from_message(
+    final_message: Any,
+    model: str,
+    text: str | None = None,
+) -> LlmResponse:
+    tool_calls: list[ToolCallBlock] = []
+    thinking_blocks: list[dict[str, object]] = []
+    text_parts: list[str] = []
+    for block in final_message.content:
+        block_type = getattr(block, "type", "")
+        if block_type == "tool_use":
+            tool_calls.append(
+                ToolCallBlock(id=block.id, name=block.name, input=dict(block.input))
+            )
+        elif block_type == "thinking":
+            thinking_blocks.append(
+                {"type": "thinking", "thinking": block.thinking, "signature": block.signature}
+            )
+        elif block_type == "text" and text is None:
+            text_parts.append(str(getattr(block, "text", "")))
+
+    return LlmResponse(
+        stop_reason=final_message.stop_reason or "end_turn",
+        tool_calls=tool_calls,
+        text=text if text is not None else "".join(text_parts),
+        thinking_blocks=thinking_blocks,
+        usage=_anthropic_usage_stats(final_message, model),
+    )
+
+
 class AnthropicProvider:
     def __init__(self, model: str, client: Any = None) -> None:
         if client is None:
@@ -199,7 +244,17 @@ class AnthropicProvider:
                         text_parts.append(text)
                     final_message = await stream.get_final_message()
                 break
-            except (httpx.RemoteProtocolError, httpx.ReadError, httpx.ConnectError) as exc:
+            except (httpx.RemoteProtocolError, httpx.ReadError, httpx.ConnectError, IndexError) as exc:
+                if isinstance(exc, IndexError):
+                    log.warning(
+                        "anthropic stream parser failed run_id=%s step=%d; falling back to non-streaming: %s",
+                        run_id,
+                        step,
+                        exc,
+                    )
+                    final_message = await self._client.messages.create(**kwargs)
+                    text_parts = []
+                    break
                 if attempt == _MAX_STREAM_RETRIES:
                     log.error(
                         "stream failed after %d attempts run_id=%s step=%d: %s",
@@ -223,48 +278,26 @@ class AnthropicProvider:
 
         assert final_message is not None
 
-        usage = final_message.usage
-        cache_read: int = getattr(usage, "cache_read_input_tokens", 0) or 0
-        cache_create: int = getattr(usage, "cache_creation_input_tokens", 0) or 0
-        context_pct = usage.input_tokens / _context_window(self._model)
+        response = _anthropic_response_from_message(
+            final_message,
+            self._model,
+            text="".join(text_parts) if text_parts else None,
+        )
+        assert response.usage is not None
 
         await bus.publish(
             LlmUsageEvent(
                 run_id=run_id,
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
-                cache_read_input_tokens=cache_read,
-                cache_creation_input_tokens=cache_create,
-                context_pct=context_pct,
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                cache_read_input_tokens=response.usage.cache_read_input_tokens,
+                cache_creation_input_tokens=response.usage.cache_creation_input_tokens,
+                context_pct=response.usage.context_pct,
                 ts=_now(),
             )
         )
 
-        tool_calls: list[ToolCallBlock] = []
-        thinking_blocks: list[dict[str, object]] = []
-        for block in final_message.content:
-            if block.type == "tool_use":
-                tool_calls.append(
-                    ToolCallBlock(id=block.id, name=block.name, input=dict(block.input))
-                )
-            elif block.type == "thinking":
-                thinking_blocks.append(
-                    {"type": "thinking", "thinking": block.thinking, "signature": block.signature}
-                )
-
-        return LlmResponse(
-            stop_reason=final_message.stop_reason or "end_turn",
-            tool_calls=tool_calls,
-            text="".join(text_parts),
-            thinking_blocks=thinking_blocks,
-            usage=UsageStats(
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
-                cache_read_input_tokens=cache_read,
-                cache_creation_input_tokens=cache_create,
-                context_pct=context_pct,
-            ),
-        )
+        return response
 
 
 class OpenAIProvider:

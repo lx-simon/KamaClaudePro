@@ -8,7 +8,7 @@ from typing import Any
 
 from kama_claude.core.bus.envelope import JsonRpcRequest
 
-type EventHandler = Callable[[dict[str, Any]], Awaitable[None]]
+EventHandler = Callable[[dict[str, Any]], Awaitable[None]]
 
 _MAX_LINE_BYTES = 64 * 1024 * 1024  # 64 MB per frame，兼容 MCP 大文件工具结果
 

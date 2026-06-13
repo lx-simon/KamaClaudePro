@@ -17,6 +17,7 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 printf '%s\n' '==> Syncing project with Termux system Python'
+uv python pin "$(command -v python)"
 uv sync --python "$(command -v python)"
 
 printf '%s\n' '==> Done'

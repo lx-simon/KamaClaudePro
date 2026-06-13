@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "KamaClaude"
 version = "0.0.1"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "pydantic>=2.0",
     "python-dotenv>=1.0",
@@ -34,7 +34,7 @@ dev = [
 [tool.ruff]
 src = ["src"]
 line-length = 100
-target-version = "py312"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
@@ -45,7 +45,7 @@ ignore = []
 "scripts/**/*.py" = ["E501"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 strict = true
 mypy_path = "src"
 explicit_package_bases = true

@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 
 from pydantic import BaseModel
 
-type EventHandler = Callable[[BaseModel], Awaitable[None]]
+EventHandler = Callable[[BaseModel], Awaitable[None]]
 
 
 class EventBus:

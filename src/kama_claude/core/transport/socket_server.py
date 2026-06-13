@@ -27,7 +27,7 @@ from kama_claude.core.transport.ipc_broadcaster import IpcEventBroadcaster
 
 logger = logging.getLogger(__name__)
 
-type CommandHandler = Callable[[dict[str, Any]], Awaitable[Any]]
+CommandHandler = Callable[[dict[str, Any]], Awaitable[Any]]
 
 # 每个连接处理协程中，当前正在处理的 writer（供 handler 读取连接上下文）
 _writer_var: ContextVar[asyncio.StreamWriter] = ContextVar("_writer_var")

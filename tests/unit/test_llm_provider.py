@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from pydantic import BaseModel
+from types import SimpleNamespace
 
 from kama_claude.core.events.bus import EventBus
 from kama_claude.core.llm.provider import AnthropicProvider, OpenAIProvider, create_provider
@@ -65,6 +66,16 @@ class FakeStream:
         return self._final
 
 
+class BrokenTextStream(FakeStream):
+    @property
+    def text_stream(self):  # type: ignore[return]
+        async def _gen():
+            raise IndexError("list index out of range")
+            yield ""
+
+        return _gen()
+
+
 class FakeOpenAIStream:
     def __init__(self, chunks: list[MagicMock]) -> None:
         self._chunks = chunks
@@ -84,7 +95,7 @@ async def _openai_create_mock(**kwargs: object) -> FakeOpenAIStream:
     text_choice = MagicMock(delta=text_delta, finish_reason=None)
     text_chunk = MagicMock(choices=[text_choice], usage=None)
 
-    fn_delta = MagicMock(name="read_file", arguments='{"path":"README.md"}')
+    fn_delta = SimpleNamespace(name="read_file", arguments='{"path":"README.md"}')
     tc_delta = MagicMock(index=0, id="call_1", function=fn_delta)
     tool_delta = MagicMock(content=None, tool_calls=[tc_delta])
     tool_choice = MagicMock(delta=tool_delta, finish_reason="tool_calls")
@@ -95,7 +106,7 @@ async def _openai_create_mock(**kwargs: object) -> FakeOpenAIStream:
 
 async def _openai_bad_index_create_mock(**kwargs: object) -> FakeOpenAIStream:
     usage = MagicMock(prompt_tokens=12, completion_tokens=3)
-    fn_delta = MagicMock(name="read_file", arguments='{"path":"README.md"}')
+    fn_delta = SimpleNamespace(name="read_file", arguments='{"path":"README.md"}')
     tc_delta = MagicMock(index=-1, id="call_bad", function=fn_delta)
     tool_delta = MagicMock(content=None, tool_calls=[tc_delta])
     tool_choice = MagicMock(delta=tool_delta, finish_reason="tool_calls")
@@ -240,6 +251,29 @@ async def test_no_tokens_when_response_is_empty() -> None:
     tokens = [e for e in events if e.type == "llm.token"]  # type: ignore[attr-defined]
     assert tokens == []
     assert result.text == ""
+
+
+async def test_anthropic_stream_index_error_falls_back_to_non_streaming() -> None:
+    fallback_text = MagicMock()
+    fallback_text.type = "text"
+    fallback_text.text = "fallback ok"
+    fallback_final = _make_final(content=[fallback_text])
+
+    async def _create_mock(**kwargs: object) -> MagicMock:
+        _create_mock.kwargs = kwargs  # type: ignore[attr-defined]
+        return fallback_final
+
+    client = MagicMock()
+    client.messages.stream.return_value = BrokenTextStream([], _make_final())
+    client.messages.create = _create_mock
+    provider = AnthropicProvider(model="test-model", client=client)
+
+    result, events = await _chat(provider)
+
+    assert result.text == "fallback ok"
+    assert _create_mock.kwargs["model"] == "test-model"  # type: ignore[attr-defined]
+    tokens = [e for e in events if e.type == "llm.token"]  # type: ignore[attr-defined]
+    assert tokens == []
 
 
 async def test_openai_provider_streams_text_and_tools() -> None:
