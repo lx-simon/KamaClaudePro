@@ -30,6 +30,7 @@ uv run kama-core          # terminal 1
 uv run kama ping          # terminal 2
 uv run kama chat          # CLI chat
 uv run kama-tui           # TUI
+uv run kama-web           # Web UI: http://127.0.0.1:7440
 ```
 
 Common session commands:
@@ -43,6 +44,7 @@ uv run kama session cancel work
 ```
 
 Short docs: [docs/quick-guide.md](docs/quick-guide.md). Changes: [CHANGELOG.md](CHANGELOG.md).
+SkillOpt analysis: [docs/skillopt-analysis.md](docs/skillopt-analysis.md).
 
 
 我最近在公众号「卡码大模型」上，更新了很多关于 Agent、codex、Claude工作原理的文章。

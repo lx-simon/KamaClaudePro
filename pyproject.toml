@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "KamaClaude"
-version = "0.0.2"
+version = "0.0.3"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "pydantic>=2.0",
@@ -19,9 +19,11 @@ dependencies = [
 kama = "kama_claude.cli.main:main"
 kama-core = "kama_claude.core.app:run"
 kama-tui = "kama_claude.tui.__main__:main"
+kama-web = "kama_claude.web.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kama_claude"]
+artifacts = ["src/kama_claude/web/static/*"]
 
 [dependency-groups]
 dev = [

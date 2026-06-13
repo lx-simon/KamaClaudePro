@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KamaClaude Web</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <strong>KamaClaude</strong>
+      <span id="sessionLabel">No session</span>
+    </div>
+    <div class="actions">
+      <button id="newSessionBtn">New</button>
+      <button id="refreshBtn">Refresh</button>
+      <button id="cancelBtn" class="warn">Cancel</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sessions">
+      <div class="panel-title">Sessions</div>
+      <div id="sessions"></div>
+    </aside>
+
+    <section class="chat">
+      <div id="messages" class="messages"></div>
+      <div id="permission" class="permission hidden"></div>
+      <form id="composer" class="composer">
+        <textarea id="input" rows="3" placeholder="Message KamaClaude. Enter sends, Shift+Enter adds a newline."></textarea>
+        <div class="composer-actions">
+          <input id="aliasInput" placeholder="alias">
+          <button id="aliasBtn" type="button">Set Alias</button>
+          <button id="compactBtn" type="button">Compact</button>
+          <button type="submit">Send</button>
+        </div>
+      </form>
+    </section>
+
+    <aside class="events">
+      <div class="panel-title">Run Events</div>
+      <div id="events"></div>
+    </aside>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

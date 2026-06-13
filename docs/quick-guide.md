@@ -8,7 +8,7 @@ Check the current version:
 uv run kama --version
 ```
 
-Current release: `0.0.2`.
+Current release: `0.0.3`.
 
 Project changes are tracked in `CHANGELOG.md`.
 
@@ -92,6 +92,15 @@ TUI:
 ```bash
 uv run kama-tui
 ```
+
+Web UI:
+
+```bash
+uv run kama-web
+# open http://127.0.0.1:7440
+```
+
+The Web UI uses the same `kama-core` daemon as CLI and TUI. It adds no extra runtime dependency and talks to core through the existing JSON-RPC socket plus Server-Sent Events.
 
 ## Sessions
 
@@ -188,6 +197,12 @@ uv run kama-tui
   -> socket_client.py
   -> session.* RPC and event.subscribe
 
+uv run kama-web
+  -> kama_claude.web.__main__:main
+  -> stdlib ThreadingHTTPServer
+  -> web/static/index.html, app.css, app.js
+  -> SocketClient session.* RPC and event.subscribe
+
 uv run kama session list
   -> cli/commands/session.py cmd_session_list
   -> core/app.py _session_list_handler
@@ -229,6 +244,12 @@ demo__hello
 demo__add
 demo__now
 ```
+
+## SkillOpt
+
+SkillOpt is best used as an offline skill optimizer, not as a required KamaClaude runtime dependency. Let SkillOpt generate a reviewed `best_skill.md`, then place it in `.kama/skills/<name>.md` or `~/.kama/skills/<name>.md` and invoke it with `/name` in CLI, TUI, or Web UI.
+
+Details: `docs/skillopt-analysis.md`.
 
 ## Troubleshooting
 

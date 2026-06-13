@@ -2,6 +2,68 @@
 
 All notable project changes are recorded here.
 
+## 0.0.3 - 2026-06-14
+
+### Added
+
+- Added Web UI entry point: `uv run kama-web`.
+- Added stdlib-based Web UI server under `src/kama_claude/web/__main__.py`. It serves static files and talks to `kama-core` through the existing JSON-RPC socket client.
+- Added Web UI static assets under `src/kama_claude/web/static/`: `index.html`, `app.css`, and `app.js`.
+- Added Web UI support for session list, create/resume, message send, streaming tokens, run/tool/session event display, permission responses, alias setting, compaction, and cancellation.
+- Added package metadata for Web UI static assets so packaged builds can include the browser files.
+- Added SkillOpt analysis documentation under `docs/skillopt-analysis.md`.
+
+### Changed
+
+- Bumped project version from `0.0.2` to `0.0.3`.
+- Updated README quick start with `uv run kama-web`.
+- Updated `docs/quick-guide.md` with Web UI commands, code-path mapping, SkillOpt notes, and current release version.
+- Rewrote `docs/termux.md` into readable Chinese and clarified that Termux should sync with `uv sync --python "$(command -v python)"` or `sh scripts/setup_termux.sh`.
+
+### Fixed
+
+- Fixed Web UI event stream behavior when `kama-core` is unavailable by emitting a `core.unavailable` SSE event instead of failing silently.
+- Fixed a Web UI session metadata separator that could render poorly in some terminals/editors.
+
+### Usage Examples
+
+```bash
+python scripts/uv_sync.py      # Windows / Linux / WSL portable sync
+sh scripts/uv_sync.sh          # shell shortcut
+sh scripts/setup_termux.sh     # Android Termux setup
+
+uv run kama-core               # start core daemon
+uv run kama-web                # start Web UI on http://127.0.0.1:7440
+uv run kama chat --session work
+uv run kama session alias <session_id> work
+uv run kama session cancel work
+```
+
+### Command To Python Code
+
+```text
+uv run kama-web
+  -> pyproject.toml [project.scripts].kama-web
+  -> kama_claude.web.__main__:main
+  -> ThreadingHTTPServer serves web/static files
+  -> SocketClient calls session.* RPC and subscribes to events
+```
+
+### SkillOpt Notes
+
+- SkillOpt should be used as an offline optimizer that generates reviewed skill markdown such as `best_skill.md`.
+- Put the generated skill into `.kama/skills/<name>.md`, `.kama/skills/<name>/SKILL.md`, or `~/.kama/skills/<name>.md`.
+- Invoke the skill through `/name` in CLI, TUI, or Web UI.
+- Do not make SkillOpt a required KamaClaude runtime dependency yet, because its optimizer/evaluation dependencies may be too heavy for Termux.
+
+### Verified
+
+- `python -m compileall -q src scripts tests`
+- `uv lock --check`
+- `uv run kama --version` -> `0.0.3`
+- `uv run kama-web --help`
+- `uv run pytest tests/unit/test_session_manager.py tests/unit/test_session_store.py tests/unit/test_llm_provider.py tests/unit/test_tui_app.py tests/unit/test_commands_events.py` -> `50 passed`
+
 ## 0.0.2 - 2026-06-13
 
 ### Added
