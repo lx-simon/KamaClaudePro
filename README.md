@@ -1,6 +1,50 @@
 > Copy from https://github.com/youngyangyang04/KamaClaude
 # KamaClaude
 
+## Quick Start
+
+Use the helper instead of plain `uv sync` when switching between Windows, Linux, WSL, or Termux. It picks a compatible Python (`>=3.11,<3.14`) and keeps `.python-version` portable.
+
+```bash
+# Windows / Linux / WSL
+python scripts/uv_sync.py
+
+# Linux / WSL shell shortcut
+sh scripts/uv_sync.sh
+
+# Termux
+sh scripts/setup_termux.sh
+```
+
+Configure model API:
+
+```bash
+cp .env.example .env
+# edit .env and uncomment exactly one provider block
+```
+
+Run:
+
+```bash
+uv run kama-core          # terminal 1
+uv run kama ping          # terminal 2
+uv run kama chat          # CLI chat
+uv run kama-tui           # TUI
+```
+
+Common session commands:
+
+```bash
+uv run kama session list
+uv run kama session alias <session_id> work
+uv run kama chat --session work
+uv run kama-tui --session work
+uv run kama session cancel work
+```
+
+Short docs: [docs/quick-guide.md](docs/quick-guide.md). Changes: [CHANGELOG.md](CHANGELOG.md).
+
+
 我最近在公众号「卡码大模型」上，更新了很多关于 Agent、codex、Claude工作原理的文章。
 
 这些文章目前已经沉淀在卡码笔记上：[https://notes.kamacoder.com](https://notes.kamacoder.com)

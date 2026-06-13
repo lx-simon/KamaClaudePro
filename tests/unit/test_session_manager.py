@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,21 @@ class _Runner:
             [{"role": "assistant", "content": [{"type": "text", "text": f"done {goal}"}]}],
             run_id,
         )
+        return RunOutcome(status="success", result="done", reason=None)
+
+
+class _SlowRunner:
+    async def run_and_capture(
+        self,
+        goal: str,
+        *,
+        run_id: str | None = None,
+        session: Session | None = None,
+        store: SessionStore | None = None,
+        system_prompt_override: str | None = None,
+        tool_whitelist: list[str] | None = None,
+    ) -> RunOutcome:
+        await asyncio.sleep(60)
         return RunOutcome(status="success", result="done", reason=None)
 
 
@@ -188,3 +204,15 @@ async def test_session_alias_conflict_rejected(tmp_path: Path) -> None:
     with pytest.raises(HandlerError) as exc:
         await manager.set_alias(second.id, "work")
     assert exc.value.code == SESSION_ALIAS_CONFLICT
+
+
+async def test_cancel_running_session(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path)
+    manager = SessionManager(store, lambda: _SlowRunner(), EventBus())  # type: ignore[arg-type]
+    session = await manager.create("chat")
+    task = asyncio.create_task(manager.send_message(session.id, "slow"))
+    await asyncio.sleep(0)
+
+    assert await manager.cancel(session.id) is True
+    with pytest.raises(asyncio.CancelledError):
+        await task

@@ -26,6 +26,8 @@ from kama_claude.core.bus.commands import (
     SessionCloseResult,
     SessionAliasCommand,
     SessionAliasResult,
+    SessionCancelCommand,
+    SessionCancelResult,
     SessionCompactCommand,
     SessionCompactResult,
     SessionCreateCommand,
@@ -166,6 +168,12 @@ class CoreApp:
         cmd = SessionAliasCommand.model_validate(params)
         session = await self._sessions.set_alias(cmd.session_id, cmd.alias)
         return SessionAliasResult(session_id=session.id, alias=session.alias)
+
+    async def _session_cancel_handler(self, params: dict[str, Any]) -> SessionCancelResult:
+        assert self._sessions is not None
+        cmd = SessionCancelCommand.model_validate(params)
+        cancelled = await self._sessions.cancel(cmd.session_id)
+        return SessionCancelResult(cancelled=cancelled)
 
     # 接收客户端权限审批响应，resolve 对应挂起的 Future
     async def _permission_respond_handler(self, params: dict[str, Any]) -> PermissionRespondResult:
@@ -311,6 +319,7 @@ class CoreApp:
         server.register("session.send_message", self._session_send_handler)
         server.register("session.get_history", self._session_history_handler)
         server.register("session.alias", self._session_alias_handler)
+        server.register("session.cancel", self._session_cancel_handler)
         server.register("session.close", self._session_close_handler)
         server.register("permission.respond", self._permission_respond_handler)
         server.register("session.compact", self._session_compact_handler)

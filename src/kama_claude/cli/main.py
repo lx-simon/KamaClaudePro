@@ -7,7 +7,12 @@ from kama_claude.cli.commands.chat import cmd_chat
 from kama_claude.cli.commands.core import cmd_core_start, cmd_core_status, cmd_core_stop
 from kama_claude.cli.commands.ping import cmd_ping
 from kama_claude.cli.commands.run import cmd_run
-from kama_claude.cli.commands.session import cmd_session_alias, cmd_session_history, cmd_session_list
+from kama_claude.cli.commands.session import (
+    cmd_session_alias,
+    cmd_session_cancel,
+    cmd_session_history,
+    cmd_session_list,
+)
 from kama_claude.cli.commands.trace import cmd_trace
 from kama_claude.cli.commands.version import cmd_version
 from kama_claude.core.config import get_config
@@ -42,6 +47,8 @@ def main() -> None:
     alias_parser = session_sub.add_parser("alias", help="Set a short alias for a session")
     alias_parser.add_argument("session_id", help="Session ID or existing alias")
     alias_parser.add_argument("alias", help="New alias, for example work")
+    cancel_parser = session_sub.add_parser("cancel", help="Cancel the currently running turn")
+    cancel_parser.add_argument("session_id", help="Session ID or alias")
 
     trace_parser = subparsers.add_parser("trace", help="View system trace log")
     trace_parser.add_argument("run_id", nargs="?", default=None, help="Filter by run ID")
@@ -82,6 +89,8 @@ def main() -> None:
             cmd_session_history(args.session_id, config, raw=args.raw)
         elif args.session_command == "alias":
             cmd_session_alias(args.session_id, args.alias, config)
+        elif args.session_command == "cancel":
+            cmd_session_cancel(args.session_id, config)
         else:
             session_parser.print_help()
             sys.exit(1)

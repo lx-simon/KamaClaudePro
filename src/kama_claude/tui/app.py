@@ -471,6 +471,7 @@ class KamaTuiApp(App[None]):
     TITLE = "KamaClaude"
     BINDINGS = [
         Binding("ctrl+q", "quit", "quit"),
+        Binding("ctrl+c", "cancel_or_quit", "cancel"),
     ]
     CSS = """
     Screen { background: $background; }
@@ -617,6 +618,19 @@ class KamaTuiApp(App[None]):
         if self._session_id is not None:
             self._append(Static(f"[dim]session preserved: {self._session_id}[/dim]"))
         self.exit()
+
+    async def action_cancel_or_quit(self) -> None:
+        if not self._busy:
+            await self.action_quit()
+            return
+        if self._client is None or self._session_id is None:
+            self._append(Static("[yellow]cannot cancel: disconnected[/yellow]", classes="log-line"))
+            return
+        try:
+            await self._client.send_command("session.cancel", {"session_id": self._session_id})
+            self._append(Static("[yellow]cancel requested[/yellow]", classes="log-line"))
+        except Exception as e:
+            self._append(Static(f"[red]cancel error: {e}[/red]", classes="log-line"))
 
     # 将输入框提交内容发送给当前 chat session；用 worker 发送，避免 await 阻塞 App 消息泵
     async def on_chat_text_area_submitted(self, event: ChatTextArea.Submitted) -> None:

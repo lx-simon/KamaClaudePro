@@ -246,8 +246,8 @@ class AnthropicProvider:
                 break
             except (httpx.RemoteProtocolError, httpx.ReadError, httpx.ConnectError, IndexError) as exc:
                 if isinstance(exc, IndexError):
-                    log.warning(
-                        "anthropic stream parser failed run_id=%s step=%d; falling back to non-streaming: %s",
+                    log.info(
+                        "anthropic stream parser failed run_id=%s step=%d; using non-streaming fallback: %s",
                         run_id,
                         step,
                         exc,

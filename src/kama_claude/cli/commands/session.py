@@ -60,6 +60,18 @@ def cmd_session_alias(session_id: str, alias: str, config: KamaConfig) -> None:
     print(f"alias set: {result.get('session_id')} @{result.get('alias')}")
 
 
+def cmd_session_cancel(session_id: str, config: KamaConfig) -> None:
+    try:
+        result = asyncio.run(_send(config, "session.cancel", {"session_id": session_id}))
+    except (ConnectionRefusedError, OSError):
+        print(f"error: core not running ({config.host}:{config.port})", file=sys.stderr)
+        sys.exit(1)
+    except IpcError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+    print(f"cancelled: {session_id} ({result.get('cancelled')})")
+
+
 def cmd_session_history(session_id: str, config: KamaConfig, *, raw: bool = False) -> None:
     try:
         result = asyncio.run(_send(config, "session.get_history", {"session_id": session_id}))

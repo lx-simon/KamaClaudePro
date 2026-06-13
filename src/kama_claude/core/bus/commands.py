@@ -29,9 +29,9 @@ class AgentRunResult(BaseModel):
 
 class EventSubscribeCommand(BaseModel):
     type: Literal["event.subscribe"] = "event.subscribe"
-    topics: list[str]          # fnmatch 模式，如 ["step.*", "tool.*"]
-    scope: str = "global"      # "global" | "run:<run_id>"
-    replay_from_run: str | None = None  # 设置则先从 events.jsonl 回放历史再接实时流
+    topics: list[str]
+    scope: str = "global"
+    replay_from_run: str | None = None
 
 
 class EventSubscribeResult(BaseModel):
@@ -111,6 +111,15 @@ class SessionAliasResult(BaseModel):
     alias: str
 
 
+class SessionCancelCommand(BaseModel):
+    type: Literal["session.cancel"] = "session.cancel"
+    session_id: str
+
+
+class SessionCancelResult(BaseModel):
+    cancelled: bool
+
+
 class SessionCloseCommand(BaseModel):
     type: Literal["session.close"] = "session.close"
     session_id: str
@@ -123,7 +132,6 @@ class SessionCloseResult(BaseModel):
 class PermissionRespondCommand(BaseModel):
     type: Literal["permission.respond"] = "permission.respond"
     tool_use_id: str
-    # "allow_once" | "always_allow" | "deny_once" | "always_deny"
     decision: str
 
 
@@ -142,7 +150,6 @@ class SessionCompactResult(BaseModel):
     saved_tokens: int
 
 
-# 根据 type 字段决定命令类型的判别联合
 Command = Annotated[
     PingCommand
     | AgentRunCommand
@@ -153,6 +160,7 @@ Command = Annotated[
     | SessionSendMessageCommand
     | SessionGetHistoryCommand
     | SessionAliasCommand
+    | SessionCancelCommand
     | SessionCloseCommand
     | PermissionRespondCommand
     | SessionCompactCommand,
