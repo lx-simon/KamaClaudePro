@@ -52,6 +52,7 @@ class SessionCreateResult(BaseModel):
 
 class SessionListCommand(BaseModel):
     type: Literal["session.list"] = "session.list"
+    session_id: str | None = None
 
 
 class SessionSummary(BaseModel):

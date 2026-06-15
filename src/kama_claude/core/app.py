@@ -34,6 +34,7 @@ from kama_claude.core.bus.commands import (
     SessionCreateResult,
     SessionGetHistoryCommand,
     SessionGetHistoryResult,
+    SessionListCommand,
     SessionListResult,
     SessionResumeCommand,
     SessionResumeResult,
@@ -123,6 +124,16 @@ class CoreApp:
 
     async def _session_list_handler(self, params: dict[str, Any]) -> SessionListResult:
         assert self._sessions is not None
+        cmd = SessionListCommand.model_validate(params)
+        if cmd.session_id:
+            try:
+                session = await self._sessions.resume(cmd.session_id)
+            except HandlerError:
+                sessions_to_return = []
+            else:
+                sessions_to_return = [session]
+        else:
+            sessions_to_return = self._sessions.list_sessions()
         sessions = [
             SessionSummary(
                 session_id=s.id,
@@ -134,7 +145,7 @@ class CoreApp:
                 updated_at=s.updated_at,
                 run_count=len(s.run_ids),
             )
-            for s in self._sessions.list_sessions()
+            for s in sessions_to_return
         ]
         return SessionListResult(sessions=sessions)
 

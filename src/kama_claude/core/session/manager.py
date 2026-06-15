@@ -84,7 +84,14 @@ class SessionManager:
         return session
 
     def list_sessions(self) -> list[Session]:
-        return self._store.list_meta()
+        return [self._normalize_stored_session(session) for session in self._store.list_meta()]
+
+    def _normalize_stored_session(self, session: Session) -> Session:
+        if session.status == "running" and not self._is_running(session.id):
+            session.status = "waiting_for_input" if session.mode == "chat" else "closed"
+            session.updated_at = _now()
+            self._store.write_meta(session)
+        return session
 
     async def set_alias(self, sid_or_alias: str, alias: str) -> Session:
         alias = alias.strip()
@@ -111,6 +118,7 @@ class SessionManager:
                 session = self._store.read_meta(sid)
             except FileNotFoundError as exc:
                 raise HandlerError(SESSION_NOT_FOUND, "session not found") from exc
+            session = self._normalize_stored_session(session)
             self._sessions[sid] = session
         self._locks[sid] = _lock_for(self._locks, sid)
         if session.mode == "chat" and session.status == "closed":
@@ -120,59 +128,68 @@ class SessionManager:
         await self._bus.publish(SessionResumedEvent(session_id=sid, ts=_now()))
         return session
 
-    # 处理用户消息，追加 thread 并启动一次 agent run
+    # Start a session run in the background and return its run_id immediately.
     async def send_message(self, sid: str, content: str, *, run_id: str | None = None) -> str:
         sid = self._resolve_session_id(sid)
+        session = self._normalize_stored_session(self._get_session(sid))
+        self._sessions[sid] = session
+        lock = self._locks[sid]
+        if lock.locked() or self._is_running(sid):
+            raise HandlerError(SESSION_BUSY, "session busy")
+        if session.status == "closed":
+            raise HandlerError(SESSION_CLOSED, "session already closed")
+
+        run_id = run_id or new_run_id()
+        task = asyncio.create_task(self._run_message(sid, content, run_id))
+        self._running_tasks[sid] = task
+        task.add_done_callback(lambda done, session_id=sid: self._finish_running_task(session_id, done))
+        return run_id
+
+    async def _run_message(self, sid: str, content: str, run_id: str) -> None:
         session = self._get_session(sid)
         lock = self._locks[sid]
-        if lock.locked():
-            raise HandlerError(SESSION_BUSY, "session busy")
-
         async with lock:
-            current_task = asyncio.current_task()
-            if current_task is not None:
-                self._running_tasks[sid] = current_task
-            try:
-                if session.status == "closed":
-                    raise HandlerError(SESSION_CLOSED, "session already closed")
+            if session.status == "closed":
+                raise HandlerError(SESSION_CLOSED, "session already closed")
 
-                if session.status == "waiting_for_input":
-                    await self._bus.publish(SessionResumedEvent(session_id=sid, ts=_now()))
+            if session.status == "waiting_for_input":
+                await self._bus.publish(SessionResumedEvent(session_id=sid, ts=_now()))
 
-                self._store.append_message(sid, "user", content)
-                await self._bus.publish(
-                    SessionMessageReceivedEvent(session_id=sid, content=content, ts=_now())
-                )
+            self._store.append_message(sid, "user", content)
+            await self._bus.publish(
+                SessionMessageReceivedEvent(session_id=sid, content=content, ts=_now())
+            )
 
-                if not session.title:
-                    session.title = content[:40]
+            if not session.title:
+                session.title = content[:40]
 
-                run_id = run_id or new_run_id()
-                session.run_ids.append(run_id)
-                session.updated_at = _now()
-                self._store.write_meta(session)
+            session.run_ids.append(run_id)
+            session.status = "running"
+            session.updated_at = _now()
+            self._store.write_meta(session)
 
-                goal = content
-                system_prompt_override: str | None = None
-                tool_whitelist: list[str] | None = None
-                if content.startswith("/"):
-                    parts = content[1:].split(None, 1)
-                    skill_name = parts[0]
-                    arguments = parts[1] if len(parts) > 1 else ""
-                    skill = self._skill_loader.resolve(skill_name)
-                    if skill is not None:
-                        goal = self._skill_loader.render_prompt(skill, arguments)
-                        system_prompt_override = skill.system_prompt_template
-                        tool_whitelist = skill.allowed_tools or None
-                        await self._bus.publish(
-                            SkillInvokedEvent(
-                                skill_name=skill_name,
-                                arguments=arguments,
-                                run_id=run_id,
-                                ts=_now(),
-                            )
+            goal = content
+            system_prompt_override: str | None = None
+            tool_whitelist: list[str] | None = None
+            if content.startswith("/"):
+                parts = content[1:].split(None, 1)
+                skill_name = parts[0]
+                arguments = parts[1] if len(parts) > 1 else ""
+                skill = self._skill_loader.resolve(skill_name)
+                if skill is not None:
+                    goal = self._skill_loader.render_prompt(skill, arguments)
+                    system_prompt_override = skill.system_prompt_template
+                    tool_whitelist = skill.allowed_tools or None
+                    await self._bus.publish(
+                        SkillInvokedEvent(
+                            skill_name=skill_name,
+                            arguments=arguments,
+                            run_id=run_id,
+                            ts=_now(),
                         )
+                    )
 
+            try:
                 runner = self._runner_factory()
                 await runner.run_and_capture(
                     goal,
@@ -182,13 +199,13 @@ class SessionManager:
                     system_prompt_override=system_prompt_override,
                     tool_whitelist=tool_whitelist,
                 )
-
+            except asyncio.CancelledError:
                 session.updated_at = _now()
+                session.status = "closed" if session.mode == "one_shot" else "waiting_for_input"
+                self._store.write_meta(session)
                 if session.mode == "one_shot":
-                    session.status = "closed"
                     await self._bus.publish(SessionClosedEvent(session_id=sid, ts=session.updated_at))
                 else:
-                    session.status = "waiting_for_input"
                     await self._bus.publish(
                         SessionWaitingForInputEvent(
                             session_id=sid,
@@ -196,11 +213,36 @@ class SessionManager:
                             ts=session.updated_at,
                         )
                     )
-                self._store.write_meta(session)
-                return run_id
-            finally:
-                if self._running_tasks.get(sid) is asyncio.current_task():
-                    self._running_tasks.pop(sid, None)
+                raise
+
+            session.updated_at = _now()
+            if session.mode == "one_shot":
+                session.status = "closed"
+                await self._bus.publish(SessionClosedEvent(session_id=sid, ts=session.updated_at))
+            else:
+                session.status = "waiting_for_input"
+                await self._bus.publish(
+                    SessionWaitingForInputEvent(
+                        session_id=sid,
+                        last_run_id=run_id,
+                        ts=session.updated_at,
+                    )
+                )
+            self._store.write_meta(session)
+
+    def _is_running(self, sid: str) -> bool:
+        task = self._running_tasks.get(sid)
+        return task is not None and not task.done()
+
+    def _finish_running_task(self, sid: str, task: asyncio.Task[None]) -> None:
+        if self._running_tasks.get(sid) is task:
+            self._running_tasks.pop(sid, None)
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
     async def cancel(self, sid: str) -> bool:
         sid = self._resolve_session_id(sid)
@@ -209,6 +251,10 @@ class SessionManager:
         if task is None or task.done():
             raise HandlerError(SESSION_NOT_RUNNING, "session is not running")
         task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
         return True
 
     async def close(self, sid: str) -> None:
@@ -264,6 +310,7 @@ class SessionManager:
                 session = self._store.read_meta(sid)
             except FileNotFoundError as exc:
                 raise HandlerError(SESSION_NOT_FOUND, "session not found") from exc
+            session = self._normalize_stored_session(session)
             self._sessions[sid] = session
             self._locks[sid] = _lock_for(self._locks, sid)
         return session

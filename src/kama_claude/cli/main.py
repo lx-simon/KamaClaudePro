@@ -40,7 +40,8 @@ def main() -> None:
 
     session_parser = subparsers.add_parser("session", help="Manage chat sessions")
     session_sub = session_parser.add_subparsers(dest="session_command")
-    session_sub.add_parser("list", help="List saved sessions")
+    list_parser = session_sub.add_parser("list", help="List saved sessions")
+    list_parser.add_argument("session_id", nargs="?", help="Optional session ID or alias")
     history_parser = session_sub.add_parser("history", help="Show session history")
     history_parser.add_argument("session_id", help="Session ID to inspect")
     history_parser.add_argument("--raw", action="store_true", help="Output raw JSON")
@@ -84,7 +85,7 @@ def main() -> None:
             sys.exit(1)
     elif args.command == "session":
         if args.session_command == "list":
-            cmd_session_list(config)
+            cmd_session_list(config, session_id=args.session_id)
         elif args.session_command == "history":
             cmd_session_history(args.session_id, config, raw=args.raw)
         elif args.session_command == "alias":

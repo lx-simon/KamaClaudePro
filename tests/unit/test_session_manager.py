@@ -41,6 +41,27 @@ class _Runner:
         return RunOutcome(status="success", result="done", reason=None)
 
 
+
+
+async def _wait_for_status(store: SessionStore, session_id: str, status: str) -> None:
+    for _ in range(50):
+        if store.read_meta(session_id).status == status:
+            return
+        await asyncio.sleep(0.01)
+    assert store.read_meta(session_id).status == status
+
+
+async def _wait_for_run(store: SessionStore, session_id: str, run_id: str) -> None:
+    for _ in range(50):
+        meta = store.read_meta(session_id)
+        if run_id in meta.run_ids and meta.status in {"waiting_for_input", "closed"}:
+            return
+        await asyncio.sleep(0.01)
+    meta = store.read_meta(session_id)
+    assert run_id in meta.run_ids
+    assert meta.status in {"waiting_for_input", "closed"}
+
+
 class _SlowRunner:
     async def run_and_capture(
         self,
@@ -84,6 +105,7 @@ async def test_send_message_chat_enters_waiting_and_writes_thread(tmp_path: Path
     session = await manager.create("chat")
 
     run_id = await manager.send_message(session.id, "hello")
+    await _wait_for_run(store, session.id, run_id)
 
     loaded = store.read_meta(session.id)
     assert loaded.status == "waiting_for_input"
@@ -100,7 +122,8 @@ async def test_one_shot_auto_closes(tmp_path: Path) -> None:
     manager = SessionManager(store, lambda: _Runner(), EventBus())  # type: ignore[arg-type]
     session = await manager.create("one_shot")
 
-    await manager.send_message(session.id, "hello")
+    run_id = await manager.send_message(session.id, "hello")
+    await _wait_for_run(store, session.id, run_id)
 
     assert store.read_meta(session.id).status == "closed"
 
@@ -131,11 +154,13 @@ async def test_resume_loads_session_from_store(tmp_path: Path) -> None:
     store = SessionStore(tmp_path)
     manager1 = SessionManager(store, lambda: _Runner(), EventBus())  # type: ignore[arg-type]
     session = await manager1.create("chat", "keep me")
-    await manager1.send_message(session.id, "hello")
+    first_run_id = await manager1.send_message(session.id, "hello")
+    await _wait_for_run(store, session.id, first_run_id)
 
     manager2 = SessionManager(store, lambda: _Runner(), EventBus())  # type: ignore[arg-type]
     resumed = await manager2.resume(session.id)
     run_id = await manager2.send_message(session.id, "again")
+    await _wait_for_run(store, session.id, run_id)
 
     assert resumed.id == session.id
     assert store.read_meta(session.id).run_ids[-1] == run_id
@@ -174,6 +199,7 @@ async def test_session_alias_can_resume_and_send(tmp_path: Path) -> None:
     aliased = await manager.set_alias(session.id, "work")
     resumed = await manager.resume("work")
     run_id = await manager.send_message("work", "continue")
+    await _wait_for_run(store, session.id, run_id)
 
     assert aliased.id == session.id
     assert resumed.id == session.id
@@ -210,9 +236,9 @@ async def test_cancel_running_session(tmp_path: Path) -> None:
     store = SessionStore(tmp_path)
     manager = SessionManager(store, lambda: _SlowRunner(), EventBus())  # type: ignore[arg-type]
     session = await manager.create("chat")
-    task = asyncio.create_task(manager.send_message(session.id, "slow"))
-    await asyncio.sleep(0)
+    run_id = await manager.send_message(session.id, "slow")
+    await _wait_for_status(store, session.id, "running")
 
+    assert run_id
     assert await manager.cancel(session.id) is True
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    assert store.read_meta(session.id).status == "waiting_for_input"
