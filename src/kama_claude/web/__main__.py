@@ -38,10 +38,18 @@ class WebState:
 
 async def _core_command(state: WebState, method: str, params: dict[str, Any]) -> dict[str, Any]:
     client = SocketClient(state.core_host, state.core_port)
+    loop_task: asyncio.Task[None] | None = None
     await client.connect()
     try:
+        loop_task = asyncio.create_task(client.run_event_loop())
         return await client.send_command(method, params)
     finally:
+        if loop_task is not None:
+            loop_task.cancel()
+            try:
+                await loop_task
+            except asyncio.CancelledError:
+                pass
         await client.close()
 
 
@@ -89,6 +97,8 @@ class KamaWebHandler(BaseHTTPRequestHandler):
             self._json_command("session.alias", body)
         elif parsed.path == "/api/session/cancel":
             self._json_command("session.cancel", body)
+        elif parsed.path == "/api/session/close":
+            self._json_command("session.close", body)
         elif parsed.path == "/api/permission/respond":
             self._json_command("permission.respond", body)
         elif parsed.path == "/api/session/compact":
@@ -140,12 +150,20 @@ class KamaWebHandler(BaseHTTPRequestHandler):
         params: dict[str, Any] = {"topics": DEFAULT_TOPICS, "scope": "global"}
         if replay_run_id:
             params["replay_from_run"] = replay_run_id
+        loop_task: asyncio.Task[None] | None = None
         try:
+            loop_task = asyncio.create_task(client.run_event_loop())
             await client.send_command("event.subscribe", params)
-            await client.run_event_loop()
+            await loop_task
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
         finally:
+            if loop_task is not None and not loop_task.done():
+                loop_task.cancel()
+                try:
+                    await loop_task
+                except asyncio.CancelledError:
+                    pass
             await client.close()
 
     def _send_json(self, data: dict[str, Any], status: int = 200) -> None:

@@ -162,12 +162,15 @@ def test_note_save_tool_block_shows_remembered() -> None:
 # 功能：验证提交用户输入时会追加 user turn，并进入 busy 状态
 # 设计：用 fake client 替代 SocketClient，直接调用 on_chat_text_area_submitted，
 #       覆盖 TextArea 清空内容 + 设置 busy 占位符的核心状态迁移
-async def test_input_submit_appends_user_turn_and_disables_prompt() -> None:
+async def test_input_submit_appends_user_turn_and_keeps_prompt_enabled() -> None:
     class _FakeArea:
         def __init__(self) -> None:
             self.disabled = False
             self.border_title = ""
             self.text = "hello"
+
+        def focus(self) -> None:
+            pass
 
     class _FakeEvent:
         def __init__(self, area: _FakeArea) -> None:
@@ -190,9 +193,9 @@ async def test_input_submit_appends_user_turn_and_disables_prompt() -> None:
     await app.on_chat_text_area_submitted(event)  # type: ignore[arg-type]
 
     assert app._busy  # type: ignore[attr-defined]
-    assert area.disabled
+    assert not area.disabled
     assert area.text == ""
-    assert "agent is working" in area.border_title.lower()
+    assert "queue" in area.border_title.lower()
     assert appended[0].content == "[bold]>[/bold] hello"
 
 
@@ -234,3 +237,94 @@ def test_permission_select_clamps_stale_cursor_on_enter() -> None:
     widget.on_key(_Event())  # type: ignore[arg-type]
 
     assert decisions == ["always_deny"]
+
+
+async def test_input_submit_while_busy_queues_message() -> None:
+    class _FakeArea:
+        def __init__(self) -> None:
+            self.disabled = False
+            self.border_title = ""
+            self.text = "queued guidance"
+
+        def focus(self) -> None:
+            pass
+
+    class _FakeEvent:
+        def __init__(self, area: _FakeArea) -> None:
+            self.value = area.text
+            self.text_area = area
+
+    app = KamaTuiApp("127.0.0.1", 9999)
+    appended: list[Widget] = []
+    app._append = lambda w: appended.append(w)  # type: ignore[method-assign]
+    app._client = object()  # type: ignore[assignment]
+    app._session_id = "sess-1"
+    app._busy = True
+
+    area = _FakeArea()
+    await app.on_chat_text_area_submitted(_FakeEvent(area))  # type: ignore[arg-type]
+
+    assert area.text == ""
+    assert app._queued_messages == ["queued guidance"]  # type: ignore[attr-defined]
+    assert "queued #1" in appended[0].content
+
+
+def test_waiting_for_input_sends_next_queued_message() -> None:
+    app = KamaTuiApp("127.0.0.1", 9999)
+    appended: list[Widget] = []
+    started: list[str] = []
+    app._append = lambda w: appended.append(w)  # type: ignore[method-assign]
+    app._update_header = lambda state: None  # type: ignore[method-assign]
+    def _fake_run_worker(coro, **kwargs):
+        coro.close()
+        started.append("worker")
+
+    app.run_worker = _fake_run_worker  # type: ignore[method-assign]
+    app._queued_messages = ["/skill guide"]  # type: ignore[attr-defined]
+    app._busy = True
+
+    app._handle_event({"type": "session.waiting_for_input", "session_id": "sess-1"})
+
+    assert app._busy  # type: ignore[attr-defined]
+    assert app._queued_messages == []  # type: ignore[attr-defined]
+    assert started == ["worker"]
+    assert appended[-1].content == "[bold]>[/bold] /skill guide"
+
+
+async def test_now_command_interrupts_and_queues_front() -> None:
+    class _FakeArea:
+        def __init__(self) -> None:
+            self.disabled = False
+            self.border_title = ""
+            self.text = "/now focus on tests"
+
+        def focus(self) -> None:
+            pass
+
+    class _FakeEvent:
+        def __init__(self, area: _FakeArea) -> None:
+            self.value = area.text
+            self.text_area = area
+
+    app = KamaTuiApp("127.0.0.1", 9999)
+    appended: list[Widget] = []
+    workers: list[str] = []
+    app._append = lambda w: appended.append(w)  # type: ignore[method-assign]
+
+    def _fake_run_worker(coro, **kwargs):
+        coro.close()
+        workers.append(kwargs.get("name", ""))
+
+    app.run_worker = _fake_run_worker  # type: ignore[method-assign]
+    app._client = object()  # type: ignore[assignment]
+    app._session_id = "sess-1"
+    app._busy = True
+    app._queued_messages = ["later"]  # type: ignore[attr-defined]
+
+    area = _FakeArea()
+    await app.on_chat_text_area_submitted(_FakeEvent(area))  # type: ignore[arg-type]
+
+    assert area.text == ""
+    assert app._queued_messages == ["focus on tests", "later"]  # type: ignore[attr-defined]
+    assert workers == ["cancel_for_now"]
+    assert "interrupt + guide" in appended[0].content

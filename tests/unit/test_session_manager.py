@@ -139,10 +139,10 @@ async def test_missing_session_raises_handler_error(tmp_path: Path) -> None:
 
 # 功能：验证 closed session 不能继续 send_message
 # 设计：先显式 close，再发送消息，断言 session_closed 错误码，覆盖状态机拒绝路径
-async def test_closed_session_rejects_message(tmp_path: Path) -> None:
+async def test_closed_one_shot_session_rejects_message(tmp_path: Path) -> None:
     store = SessionStore(tmp_path)
     manager = SessionManager(store, lambda: _Runner(), EventBus())  # type: ignore[arg-type]
-    session = await manager.create("chat")
+    session = await manager.create("one_shot")
     await manager.close(session.id)
 
     with pytest.raises(HandlerError) as exc:
@@ -230,6 +230,22 @@ async def test_session_alias_conflict_rejected(tmp_path: Path) -> None:
     with pytest.raises(HandlerError) as exc:
         await manager.set_alias(second.id, "work")
     assert exc.value.code == SESSION_ALIAS_CONFLICT
+
+
+async def test_closed_chat_session_can_resume_and_send(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path)
+    manager = SessionManager(store, lambda: _Runner(), EventBus())  # type: ignore[arg-type]
+    session = await manager.create("chat", "project")
+    await manager.set_alias(session.id, "mw")
+    await manager.close("mw")
+
+    resumed = await manager.resume("mw")
+    run_id = await manager.send_message("mw", "continue")
+    await _wait_for_run(store, session.id, run_id)
+
+    assert resumed.id == session.id
+    assert store.read_meta(session.id).status == "waiting_for_input"
+    assert store.read_messages(session.id)[-2] == {"role": "user", "content": "continue"}
 
 
 async def test_cancel_running_session(tmp_path: Path) -> None:

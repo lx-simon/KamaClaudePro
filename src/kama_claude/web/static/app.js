@@ -1,5 +1,6 @@
 const state = {
   sessionId: null,
+  sessionStatus: '',
   busy: false,
   currentAssistant: null,
   sessions: [],
@@ -19,7 +20,9 @@ async function api(path, body) {
 }
 
 function labelSession() {
-  $('sessionLabel').textContent = state.sessionId ? `session ${state.sessionId}` : 'No session';
+  const status = state.sessionStatus ? ` - ${state.sessionStatus}` : '';
+  $('sessionLabel').textContent = state.sessionId ? `session ${state.sessionId}${status}` : 'No session';
+  $('input').disabled = state.sessionStatus === 'closed';
 }
 
 function addMessage(role, text) {
@@ -48,6 +51,7 @@ async function refreshSessions() {
   for (const s of state.sessions) {
     const item = document.createElement('div');
     item.className = 'session-item' + (s.session_id === state.sessionId ? ' active' : '');
+    item.classList.add(`status-${s.status}`);
     const name = s.alias ? `@${s.alias}` : s.session_id;
     item.innerHTML = `<div class="session-id"></div><div class="session-meta"></div>`;
     item.querySelector('.session-id').textContent = name;
@@ -60,6 +64,7 @@ async function refreshSessions() {
 async function createSession() {
   const result = await api('/api/session/create', {mode: 'chat'});
   state.sessionId = result.session_id;
+  state.sessionStatus = result.status || 'active';
   labelSession();
   $('messages').innerHTML = '';
   addMessage('system', `Created ${state.sessionId}`);
@@ -69,9 +74,10 @@ async function createSession() {
 async function resumeSession(id) {
   const result = await api('/api/session/resume', {session_id: id});
   state.sessionId = result.session_id;
+  state.sessionStatus = result.status || '';
   labelSession();
   $('messages').innerHTML = '';
-  addMessage('system', `Resumed ${state.sessionId}${result.alias ? ' @' + result.alias : ''}`);
+  addMessage('system', `Resumed ${state.sessionId}${result.alias ? ' @' + result.alias : ''} (${state.sessionStatus || 'unknown'})`);
   try {
     const hist = await api(`/api/history?session=${encodeURIComponent(state.sessionId)}`);
     for (const msg of hist.messages || []) renderHistoryMessage(msg);
@@ -96,6 +102,10 @@ function renderHistoryMessage(msg) {
 
 async function sendMessage(text) {
   if (!state.sessionId) await createSession();
+  if (state.sessionStatus === 'closed') {
+    addMessage('system', 'This session is closed. Create or select a chat session to continue.');
+    return;
+  }
   addMessage('user', text);
   state.busy = true;
   state.currentAssistant = null;
@@ -109,6 +119,19 @@ async function cancelRun() {
     addEvent('cancel requested', state.sessionId, 'warn');
   } catch (err) {
     addEvent('cancel failed', err.message, 'warn');
+  }
+}
+
+async function closeSession() {
+  if (!state.sessionId) return;
+  try {
+    const result = await api('/api/session/close', {session_id: state.sessionId});
+    state.sessionStatus = result.status || 'closed';
+    labelSession();
+    addEvent('session closed', state.sessionId, 'warn');
+    await refreshSessions();
+  } catch (err) {
+    addEvent('close failed', err.message, 'warn');
   }
 }
 
@@ -162,10 +185,16 @@ function handleEvent(event) {
   }
   if (type === 'session.waiting_for_input') {
     state.busy = false;
+    state.sessionStatus = 'waiting_for_input';
+    labelSession();
     state.currentAssistant = null;
     addEvent(type, event.last_run_id || '', 'ok');
     refreshSessions();
     return;
+  }
+  if (type === 'session.closed') {
+    state.sessionStatus = 'closed';
+    labelSession();
   }
   if (type === 'permission.requested') {
     showPermission(event);
@@ -201,6 +230,7 @@ $('input').addEventListener('keydown', (e) => {
 $('newSessionBtn').onclick = createSession;
 $('refreshBtn').onclick = refreshSessions;
 $('cancelBtn').onclick = cancelRun;
+$('closeBtn').onclick = closeSession;
 $('aliasBtn').onclick = setAlias;
 $('compactBtn').onclick = compact;
 

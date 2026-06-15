@@ -10,6 +10,7 @@ from kama_claude.cli.commands.run import cmd_run
 from kama_claude.cli.commands.session import (
     cmd_session_alias,
     cmd_session_cancel,
+    cmd_session_close,
     cmd_session_history,
     cmd_session_list,
 )
@@ -50,6 +51,8 @@ def main() -> None:
     alias_parser.add_argument("alias", help="New alias, for example work")
     cancel_parser = session_sub.add_parser("cancel", help="Cancel the currently running turn")
     cancel_parser.add_argument("session_id", help="Session ID or alias")
+    close_parser = session_sub.add_parser("close", help="Close an idle session")
+    close_parser.add_argument("session_id", help="Session ID or alias")
 
     trace_parser = subparsers.add_parser("trace", help="View system trace log")
     trace_parser.add_argument("run_id", nargs="?", default=None, help="Filter by run ID")
@@ -92,6 +95,8 @@ def main() -> None:
             cmd_session_alias(args.session_id, args.alias, config)
         elif args.session_command == "cancel":
             cmd_session_cancel(args.session_id, config)
+        elif args.session_command == "close":
+            cmd_session_close(args.session_id, config)
         else:
             session_parser.print_help()
             sys.exit(1)

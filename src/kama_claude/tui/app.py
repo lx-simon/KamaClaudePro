@@ -471,7 +471,7 @@ class KamaTuiApp(App[None]):
     TITLE = "KamaClaude"
     BINDINGS = [
         Binding("ctrl+q", "quit", "quit"),
-        Binding("ctrl+c", "cancel_or_quit", "cancel"),
+        Binding("ctrl+c", "cancel", "cancel"),
     ]
     CSS = """
     Screen { background: $background; }
@@ -497,13 +497,8 @@ class KamaTuiApp(App[None]):
     """
 
     _BANNER = (
-        "[bold cyan]██╗  ██╗ █████╗ ███╗   ███╗ █████╗  ██████╗██╗      █████╗ ██╗   ██╗██████╗ ███████╗[/bold cyan]\n"
-        "[bold cyan]██║ ██╔╝██╔══██╗████╗ ████║██╔══██╗██╔════╝██║     ██╔══██╗██║   ██║██╔══██╗██╔════╝[/bold cyan]\n"
-        "[bold cyan]█████╔╝ ███████║██╔████╔██║███████║██║     ██║     ███████║██║   ██║██║  ██║█████╗  [/bold cyan]\n"
-        "[bold cyan]██╔═██╗ ██╔══██║██║╚██╔╝██║██╔══██║██║     ██║     ██╔══██║██║   ██║██║  ██║██╔══╝  [/bold cyan]\n"
-        "[bold cyan]██║  ██╗██║  ██║██║ ╚═╝ ██║██║  ██║╚██████╗███████╗██║  ██║╚██████╔╝██████╔╝███████╗[/bold cyan]\n"
-        "[bold cyan]╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝[/bold cyan]\n"
-        "[dim]  输入消息开始对话  ·  键入 / 触发 skill  ·  Ctrl+C 退出[/dim]"
+        "[bold cyan]KamaClaude[/bold cyan]\n"
+        "[dim]  Type a message  |  / for skills  |  Ctrl+C cancel current run  |  Ctrl+Q quit[/dim]"
     )
 
     # 初始化连接参数和 TUI 内部状态
@@ -524,6 +519,7 @@ class KamaTuiApp(App[None]):
         self._pending_permission_blocks: dict[str, PermissionBlock] = {}
         self._session_id: str | None = session_id
         self._busy = False
+        self._queued_messages: list[str] = []
         self._last_context_pct: float = 0.0
         self._slash_items: list[tuple[str, str]] = []
         self._subagent_run_ids: dict[str, str] = {}  # child run_id -> description
@@ -619,9 +615,9 @@ class KamaTuiApp(App[None]):
             self._append(Static(f"[dim]session preserved: {self._session_id}[/dim]"))
         self.exit()
 
-    async def action_cancel_or_quit(self) -> None:
+    async def action_cancel(self) -> None:
         if not self._busy:
-            await self.action_quit()
+            self._append(Static("[yellow]no running turn to cancel; press Ctrl+Q to quit[/yellow]", classes="log-line"))
             return
         if self._client is None or self._session_id is None:
             self._append(Static("[yellow]cannot cancel: disconnected[/yellow]", classes="log-line"))
@@ -643,20 +639,65 @@ class KamaTuiApp(App[None]):
             if self._client is not None and self._session_id is not None and not self._busy:
                 self.run_worker(self._do_compact(), name="compact", exclusive=False)
             return
-        if self._client is None or self._session_id is None or self._busy:
-            self._append(Static("[yellow]agent busy or disconnected[/yellow]", classes="log-line"))
+        if self._client is None or self._session_id is None:
+            self._append(Static("[yellow]agent disconnected[/yellow]", classes="log-line"))
             return
-        self._busy = True
         prompt = event.text_area
         prompt.text = ""
-        prompt.disabled = True
+        prompt.disabled = False
         prompt.read_only = False
-        prompt.border_title = "agent is working..."
+        prompt.focus()
+        if self._busy:
+            if content.startswith("/now "):
+                immediate_content = content[5:].strip()
+                if immediate_content:
+                    self._queued_messages.insert(0, immediate_content)
+                    prompt.border_title = "interrupting current run; immediate guidance queued"
+                    self._append(Static(
+                        f"[yellow]interrupt + guide[/yellow] {immediate_content}",
+                        classes="user-turn",
+                    ))
+                    self.run_worker(self._cancel_current_run(), name="cancel_for_now", exclusive=False)
+                return
+            self._queued_messages.append(content)
+            prompt.border_title = f"queued {len(self._queued_messages)} message(s); keep typing"
+            self._append(Static(f"[dim]queued #{len(self._queued_messages)}[/dim] {content}", classes="user-turn"))
+            return
+        prompt.border_title = "agent is working... type /commands or next message to queue"
+        self._start_send_message(content)
+
+    # 在 worker 中执行手动压缩命令，完成后显示结果横幅
+    async def _cancel_current_run(self) -> None:
+        if self._client is None or self._session_id is None:
+            return
+        try:
+            await self._client.send_command("session.cancel", {"session_id": self._session_id})
+        except Exception as e:
+            self._append(Static(f"[red]cancel error: {e}[/red]", classes="log-line"))
+
+    def _start_send_message(self, content: str) -> None:
+        self._busy = True
+        prompt = self._prompt()
+        if prompt is not None:
+            prompt.disabled = False
+            prompt.read_only = False
+            prompt.border_title = "agent is working... type /commands or next message to queue"
+            prompt.focus()
         self._append(Static(f"[bold]>[/bold] {content}", classes="user-turn"))
         self._update_header("running")
         self.run_worker(self._do_send_message(content), name="send_message", exclusive=False)
 
-    # 在 worker 中执行手动压缩命令，完成后显示结果横幅
+    def _send_next_queued_message(self) -> bool:
+        if self._busy or not self._queued_messages:
+            return False
+        next_content = self._queued_messages.pop(0)
+        self._append(Static(
+            f"[dim]sending queued ({len(self._queued_messages)} left)[/dim]",
+            classes="log-line",
+        ))
+        self._start_send_message(next_content)
+        return True
+
     async def _do_compact(self) -> None:
         if self._client is None or self._session_id is None:
             return
@@ -688,6 +729,8 @@ class KamaTuiApp(App[None]):
             )
         except (IpcError, RuntimeError, OSError) as e:
             self._busy = False
+            if self._send_next_queued_message():
+                return
             prompt = self._prompt()
             if prompt is not None:
                 prompt.disabled = False
@@ -771,6 +814,7 @@ class KamaTuiApp(App[None]):
             "ready": "green",
             "running": "yellow",
             "disconnected": "red",
+            "closed": "red",
             "connecting": "dim",
         }.get(state, "dim")
         header.update(
@@ -831,17 +875,23 @@ class KamaTuiApp(App[None]):
                 if self._session_id is None:
                     created = await client.send_command("session.create", {"mode": "chat"})
                     self._session_id = str(created["session_id"])
+                    session_status = str(created.get("status", "active"))
                     log.info("session created session_id=%s", self._session_id)
                 else:
-                    await client.send_command("session.resume", {"session_id": self._session_id})
-                    log.info("session resumed session_id=%s", self._session_id)
+                    resumed = await client.send_command("session.resume", {"session_id": self._session_id})
+                    self._session_id = str(resumed.get("session_id", self._session_id))
+                    session_status = str(resumed.get("status", ""))
+                    log.info("session resumed session_id=%s status=%s", self._session_id, session_status)
                 prompt = self._prompt()
                 if prompt is not None:
-                    prompt.disabled = False
+                    prompt.disabled = session_status == "closed"
                     prompt.read_only = False
-                    prompt.border_title = "type a message — enter to send, ⌘/⇧/⌥+enter for newline"
-                    prompt.focus()
-                self._update_header("ready")
+                    if session_status == "closed":
+                        prompt.border_title = "session closed"
+                    else:
+                        prompt.border_title = "type a message - enter to send, shift+enter for newline"
+                        prompt.focus()
+                self._update_header("closed" if session_status == "closed" else "ready")
                 await loop_task
             except IpcError as e:
                 header.update(f"[bold]KamaClaude[/bold]  [red]subscribe error: {e}[/red]")
@@ -885,11 +935,13 @@ class KamaTuiApp(App[None]):
 
         if t == "session.waiting_for_input":
             self._busy = False
+            if self._send_next_queued_message():
+                return
             prompt = self._prompt()
             if prompt is not None:
                 prompt.disabled = False
                 prompt.read_only = False
-                prompt.border_title = "type a message — enter to send, ⌘/⇧/⌥+enter for newline"
+                prompt.border_title = "type a message - enter to send, shift+enter for newline"
                 prompt.focus()
             self._update_header("ready")
 
@@ -900,7 +952,7 @@ class KamaTuiApp(App[None]):
                 prompt.disabled = True
                 prompt.read_only = False
                 prompt.border_title = "session closed"
-            self._update_header("disconnected")
+            self._update_header("closed")
 
         elif t == "run.started":
             run_id = event.get("run_id", "")

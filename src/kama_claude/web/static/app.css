@@ -137,3 +137,7 @@ textarea:focus, input:focus { border-color: var(--accent); }
   .sessions, .events { max-height: 260px; }
   .chat { min-height: 70vh; }
 }
+
+.session-item.status-closed { opacity: 0.62; }
+.session-item.status-running .session-meta { color: var(--accent); font-weight: 700; }
+textarea:disabled { background: #f1f5f9; color: var(--muted); cursor: not-allowed; }

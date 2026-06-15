@@ -125,6 +125,7 @@ class SessionManager:
             session.status = "waiting_for_input"
             session.updated_at = _now()
             self._store.write_meta(session)
+        self._sessions[sid] = session
         await self._bus.publish(SessionResumedEvent(session_id=sid, ts=_now()))
         return session
 
@@ -136,6 +137,10 @@ class SessionManager:
         lock = self._locks[sid]
         if lock.locked() or self._is_running(sid):
             raise HandlerError(SESSION_BUSY, "session busy")
+        if session.status == "closed" and session.mode == "chat":
+            session.status = "waiting_for_input"
+            session.updated_at = _now()
+            self._store.write_meta(session)
         if session.status == "closed":
             raise HandlerError(SESSION_CLOSED, "session already closed")
 
@@ -149,6 +154,10 @@ class SessionManager:
         session = self._get_session(sid)
         lock = self._locks[sid]
         async with lock:
+            if session.status == "closed" and session.mode == "chat":
+                session.status = "waiting_for_input"
+                session.updated_at = _now()
+                self._store.write_meta(session)
             if session.status == "closed":
                 raise HandlerError(SESSION_CLOSED, "session already closed")
 
