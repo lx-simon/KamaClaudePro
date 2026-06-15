@@ -2,6 +2,73 @@
 
 All notable project changes are recorded here.
 
+## Unreleased - 2026-06-15
+
+### Added
+
+- Added `uv run kama session close <session_id-or-alias>` to close idle sessions from the CLI.
+- Added TUI queued input while the agent is running. Press Enter during a running turn to queue the message for the next turn without interrupting the current run.
+- Added TUI `/now <guidance>` command. While a turn is running, it cancels the current run, places the guidance at the front of the queue, and sends it as soon as cancellation cleanup completes.
+- Added Web UI session close support through `/api/session/close` and a `Close` button.
+- Added Web UI session status display and closed/running session styling.
+- Added Termux-safe sync defaults in `scripts/setup_termux.sh`: `UV_LINK_MODE=copy`, `UV_PYTHON_DOWNLOADS=never`, and `uv sync --no-dev --python "$(command -v python)"`.
+- Added Termux detection to `scripts/uv_sync.py` so Android uses the system Python and avoids default dev dependency sync unless explicitly requested.
+
+### Changed
+
+- Changed TUI startup banner to ASCII text to avoid mojibake on Windows terminals and narrow/mobile terminals.
+- Changed chat session resume behavior so a closed chat session can be reopened as `waiting_for_input`; one-shot sessions remain closed.
+- Changed Web UI core calls and SSE subscription to start the socket read loop before waiting for JSON-RPC responses.
+- Rewrote `docs/termux.md` as readable UTF-8 Chinese with Android/Termux troubleshooting and examples.
+
+### Fixed
+
+- Fixed `uv run kama session list` hanging by starting the socket client read loop for one-shot CLI session commands.
+- Fixed `session.list` internal error by importing `SessionListCommand` in the core app.
+- Fixed TUI alias resume display by replacing aliases with the real session ID and syncing returned session status.
+- Fixed TUI closed state display so closed sessions show `closed` instead of `disconnected`.
+- Fixed Web UI API calls and event stream hanging because socket responses were never read.
+- Fixed TUI prompt being disabled during model thinking; input now remains editable and can queue follow-up messages.
+- Reverted risky manual printable-character insertion in TUI input to avoid Chinese IME replacement/duplication behavior.
+
+### Usage Examples
+
+```powershell
+uv run kama session list
+uv run kama session list <session_id-or-alias>
+uv run kama session alias <chat-session-id> work
+uv run kama session close work
+uv run kama-tui --session work
+```
+
+TUI queued guidance examples:
+
+```text
+?? follow-up ??????????????? run
+/now ?????????????????? run?????????????
+```
+
+Termux setup example:
+
+```sh
+sh scripts/setup_termux.sh
+# or manually:
+UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never uv sync --no-dev --python "$(command -v python)"
+```
+
+Web UI example:
+
+```powershell
+uv run kama core start
+uv run kama-web
+# open http://127.0.0.1:7440
+```
+
+### Verified
+
+- `python -m compileall src scripts tests`
+- `uv run pytest tests/unit/test_session_manager.py tests/unit/test_socket_client.py tests/unit/test_tui_app.py -q` -> `33 passed`
+
 ## 0.0.3 - 2026-06-14
 
 ### Added

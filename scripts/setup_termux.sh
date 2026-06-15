@@ -1,27 +1,43 @@
 #!/data/data/com.termux/files/usr/bin/sh
 set -eu
 
-printf '%s\n' '==> Updating Termux packages'
+printf '%s
+' '==> Updating Termux packages'
 pkg update -y
 pkg upgrade -y
 
-printf '%s\n' '==> Installing build/runtime dependencies'
+printf '%s
+' '==> Installing build/runtime dependencies'
 pkg install -y python rust clang make pkg-config openssl libffi git
 
-printf '%s\n' '==> Upgrading Python packaging tools'
+printf '%s
+' '==> Upgrading Python packaging tools'
 python -m pip install -U pip setuptools wheel
 
 if ! command -v uv >/dev/null 2>&1; then
-  printf '%s\n' '==> Installing uv with pip'
+  printf '%s
+' '==> Installing uv with pip'
   python -m pip install -U uv
 fi
 
-printf '%s\n' '==> Syncing project with Termux system Python'
-uv python pin "$(command -v python)"
-uv sync --python "$(command -v python)"
+TERMUX_PYTHON="$(command -v python)"
+export UV_LINK_MODE=copy
+export UV_PYTHON_DOWNLOADS=never
 
-printf '%s\n' '==> Done'
-printf '%s\n' 'Start core with:'
-printf '%s\n' '  uv run kama-core'
-printf '%s\n' 'Then open another Termux session and run:'
-printf '%s\n' '  uv run kama ping'
+printf '%s
+' '==> Syncing project with Termux system Python'
+printf '%s
+' "    python: $TERMUX_PYTHON"
+uv python pin "$TERMUX_PYTHON"
+uv sync --no-dev --python "$TERMUX_PYTHON"
+
+printf '%s
+' '==> Done'
+printf '%s
+' 'Start core with:'
+printf '%s
+' '  uv run kama-core'
+printf '%s
+' 'Then open another Termux session and run:'
+printf '%s
+' '  uv run kama ping'

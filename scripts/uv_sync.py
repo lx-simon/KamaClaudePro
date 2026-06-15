@@ -79,7 +79,18 @@ def current_python_candidates() -> Iterable[str]:
             yield exe
 
 
+def is_termux() -> bool:
+    return Path("/data/data/com.termux/files/usr/bin/python").exists()
+
+
 def choose_python(uv: str) -> PythonChoice:
+    if is_termux():
+        python = shutil.which("python") or sys.executable
+        version = python_version(python)
+        if compatible(version):
+            assert version is not None
+            return PythonChoice(sync_request=python, pin_request=version_str(version))
+
     for executable in current_python_candidates():
         version = python_version(executable)
         if compatible(version):
@@ -102,7 +113,16 @@ def main() -> None:
     choice = choose_python(uv)
     print(f"Using Python {choice.sync_request} for uv sync")
     subprocess.run([uv, "python", "pin", choice.pin_request], cwd=ROOT, check=True)
-    subprocess.run([uv, "sync", "--python", choice.sync_request, *sys.argv[1:]], cwd=ROOT, check=True)
+    args = [uv, "sync", "--python", choice.sync_request, *sys.argv[1:]]
+    if is_termux() and "--dev" not in sys.argv[1:] and "--all-groups" not in sys.argv[1:]:
+        args.insert(2, "--no-dev")
+    env = None
+    if is_termux():
+        import os
+        env = os.environ.copy()
+        env.setdefault("UV_LINK_MODE", "copy")
+        env.setdefault("UV_PYTHON_DOWNLOADS", "never")
+    subprocess.run(args, cwd=ROOT, check=True, env=env)
 
 
 if __name__ == "__main__":
