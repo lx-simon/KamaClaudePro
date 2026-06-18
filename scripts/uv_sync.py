@@ -122,6 +122,19 @@ def main() -> None:
         env = os.environ.copy()
         env.setdefault("UV_LINK_MODE", "copy")
         env.setdefault("UV_PYTHON_DOWNLOADS", "never")
+        if "ANDROID_API_LEVEL" not in env:
+            level_result = subprocess.run(
+                [
+                    choice.sync_request,
+                    "-c",
+                    "import re, sysconfig; m=re.match(r'android-(\\d+)-', sysconfig.get_platform()); print(m.group(1) if m else '24')",
+                ],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            env["ANDROID_API_LEVEL"] = level_result.stdout.strip() or "24"
     subprocess.run(args, cwd=ROOT, check=True, env=env)
 
 

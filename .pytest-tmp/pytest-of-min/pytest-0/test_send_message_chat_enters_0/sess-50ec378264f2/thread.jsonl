@@ -1,0 +1,2 @@
+{"ts": "2026-06-18T15:30:14.958100+00:00", "role": "user", "content": "hello"}
+{"ts": "2026-06-18T15:30:14.962097+00:00", "role": "assistant", "content": [{"type": "text", "text": "done hello"}], "run_id": "20260618-153014-3689ea"}

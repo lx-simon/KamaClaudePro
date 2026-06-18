@@ -11,7 +11,7 @@ All notable project changes are recorded here.
 - Added TUI `/now <guidance>` command. While a turn is running, it cancels the current run, places the guidance at the front of the queue, and sends it as soon as cancellation cleanup completes.
 - Added Web UI session close support through `/api/session/close` and a `Close` button.
 - Added Web UI session status display and closed/running session styling.
-- Added Termux-safe sync defaults in `scripts/setup_termux.sh`: `UV_LINK_MODE=copy`, `UV_PYTHON_DOWNLOADS=never`, and `uv sync --no-dev --python "$(command -v python)"`.
+- Added Termux-safe sync defaults in `scripts/setup_termux.sh`: `UV_LINK_MODE=copy`, `UV_PYTHON_DOWNLOADS=never`, `ANDROID_API_LEVEL` inferred from Python platform tags, and `uv sync --no-dev --python "$(command -v python)"`.
 - Added Termux detection to `scripts/uv_sync.py` so Android uses the system Python and avoids default dev dependency sync unless explicitly requested.
 
 ### Changed
@@ -30,6 +30,8 @@ All notable project changes are recorded here.
 - Fixed Web UI API calls and event stream hanging because socket responses were never read.
 - Fixed TUI prompt being disabled during model thinking; input now remains editable and can queue follow-up messages.
 - Reverted risky manual printable-character insertion in TUI input to avoid Chinese IME replacement/duplication behavior.
+- Fixed mojibake in Chinese comments and documentation by rewriting affected files as UTF-8.
+- Fixed Termux `jiter`/`maturin` build failure by exporting `ANDROID_API_LEVEL` from Python `sysconfig.get_platform()`, so the wheel tag matches Termux Python supported tags.
 
 ### Usage Examples
 
@@ -68,6 +70,7 @@ uv run kama-web
 
 - `python -m compileall src scripts tests`
 - `uv run pytest tests/unit/test_session_manager.py tests/unit/test_socket_client.py tests/unit/test_tui_app.py -q` -> `33 passed`
+- Termux: `ANDROID_API_LEVEL=24` allowed `jiter==0.15.0` to build; using device SDK `29` produced an incompatible `android_29` wheel for this Termux Python.
 
 ## 0.0.3 - 2026-06-14
 
@@ -91,6 +94,13 @@ uv run kama-web
 
 - Fixed Web UI event stream behavior when `kama-core` is unavailable by emitting a `core.unavailable` SSE event instead of failing silently.
 - Fixed a Web UI session metadata separator that could render poorly in some terminals/editors.
+
+
+### Fixed
+
+- Fixed mojibake in Chinese comments and documentation by rewriting affected files as UTF-8.
+- Fixed `docs/termux.md` and TUI/CLI source comments so Chinese text remains readable across Windows, Termux, and editors.
+- Fixed Termux `jiter`/`maturin` build failure by exporting `ANDROID_API_LEVEL` from Python `sysconfig.get_platform()`, so the wheel tag matches Termux Python supported tags.
 
 ### Usage Examples
 

@@ -23,11 +23,24 @@ fi
 TERMUX_PYTHON="$(command -v python)"
 export UV_LINK_MODE=copy
 export UV_PYTHON_DOWNLOADS=never
+if [ -z "${ANDROID_API_LEVEL:-}" ]; then
+  ANDROID_API_LEVEL="$($TERMUX_PYTHON - <<'PY'
+import re
+import sysconfig
+platform = sysconfig.get_platform()
+match = re.match(r"android-(\d+)-", platform)
+print(match.group(1) if match else "24")
+PY
+)"
+  export ANDROID_API_LEVEL
+fi
 
 printf '%s
 ' '==> Syncing project with Termux system Python'
 printf '%s
 ' "    python: $TERMUX_PYTHON"
+printf '%s
+' "    ANDROID_API_LEVEL: $ANDROID_API_LEVEL"
 uv python pin "$TERMUX_PYTHON"
 uv sync --no-dev --python "$TERMUX_PYTHON"
 
